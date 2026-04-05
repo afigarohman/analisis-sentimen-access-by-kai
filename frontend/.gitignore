@@ -37,3 +37,20 @@ __screenshots__/
 
 # Vite
 *.timestamp-*-*.mjs
+
+# Python
+__pycache__/
+*.pyc
+
+# Virtual env
+venv/
+
+# Environment file
+.env
+
+# OS
+.DS_Store
+
+# Optional (kalau gak mau ke push)
+# *.xlsx
+# *.json
