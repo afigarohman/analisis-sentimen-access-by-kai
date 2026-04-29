@@ -25,6 +25,9 @@ class ReviewRead(BaseModel):
     sentiment_label: str | None
     app_version: str | None
     created_at: datetime | None
+    scraped_at: datetime | None = None
+    ai_reply: str | None = None
+    status: str | None = None
 
     @computed_field
     @property

@@ -12,3 +12,6 @@ class Review(Base):
     sentiment_label = Column(String, nullable=True)
     app_version = Column(String, nullable=True)
     created_at = Column(DateTime, nullable=True)
+    scraped_at = Column(DateTime, nullable=True)
+    ai_reply = Column(Text, nullable=True)
+    status = Column(String, nullable=True)
