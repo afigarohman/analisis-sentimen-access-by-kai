@@ -40,7 +40,7 @@ const options = {
     },
     y: {
       beginAtZero: true,
-      grid: { color: '#f1f5f9' },
+      grid: { color: 'rgba(148,163,184,0.18)' },
       ticks: { precision: 0 },
     },
   },

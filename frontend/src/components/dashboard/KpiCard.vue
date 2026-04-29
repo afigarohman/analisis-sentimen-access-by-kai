@@ -14,12 +14,17 @@ defineProps<{
 
 <template>
   <div
-    class="rounded-2xl bg-white p-4 shadow-md ring-1 ring-slate-200/80 transition hover:shadow-lg sm:p-6"
+    class="group relative overflow-hidden rounded-2xl bg-white/90 p-4 shadow-md backdrop-blur transition-all duration-300 hover:shadow-lg sm:p-6 dark:bg-slate-900/40 dark:shadow-blue-500/10"
   >
-    <p class="text-xs font-semibold text-slate-500 sm:text-sm">{{ title }}</p>
+    <div
+      class="pointer-events-none absolute -right-24 -top-24 h-56 w-56 rounded-full bg-gradient-to-tr from-blue-500/22 via-cyan-400/12 to-transparent blur-2xl opacity-80 transition group-hover:opacity-100"
+    />
+    <p class="relative text-xs font-semibold text-slate-600 sm:text-sm dark:text-slate-300">
+      {{ title }}
+    </p>
     <p
-      class="mt-2 text-2xl font-extrabold tracking-tight sm:mt-3 sm:text-3xl"
-      :class="accent ?? 'text-slate-900'"
+      class="relative mt-2 text-2xl font-extrabold tracking-tight sm:mt-3 sm:text-3xl"
+      :class="accent ?? 'text-slate-900 dark:text-slate-100'"
     >
       {{ formatNumber(value) }}
     </p>
