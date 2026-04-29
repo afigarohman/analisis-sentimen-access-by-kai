@@ -21,7 +21,17 @@ const router = createRouter({
       path: '/feedback',
       name: 'feedback',
       component: () => import('../views/FeedbackView.vue'),
-    }
+    },
+    {
+      path: '/reviews',
+      name: 'reviews',
+      component: () => import('../views/ReviewsView.vue'),
+    },
+    {
+      path: '/ai-pipeline',
+      name: 'ai-pipeline',
+      component: () => import('@/views/AIPipelineView.vue'),
+    },
   ],
 })
 
