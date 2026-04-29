@@ -1,0 +1,29 @@
+# Python
+venv/
+backend/venv/
+__pycache__/
+backend/__pycache__/
+*.pyc
+
+# Env
+.env
+backend/.env
+
+# Dataset
+*.csv
+
+# Model
+*.onnx
+*.data
+*.pkl
+
+# VSCode
+.vscode/
+
+# Node
+node_modules/
+frontend/node_modules/
+dist/
+
+# OS
+.DS_Store

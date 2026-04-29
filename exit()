@@ -1,0 +1,15 @@
+[33m39522ba[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m chore(frontend): peningkatan tampilan dashboard dan konfigurasi tooling
+[33mcad592e[m feat(frontend): integrasi fitur AI pipeline, API client, dan routing
+[33md71221f[m feat(ai): penambahan pipeline analisis sentimen menggunakan IndoBERT ONNX
+[33mb559008[m refactor(backend): penyelarasan API review, skema, dan konfigurasi database
+[33m31c826c[m feat: menambahkan halaman masukan pengguna (feedback)
+[33m6a3159a[m feat: implementasi dashboard dengan chart dan integrasi API
+[33m6dac3cf[m feat: menambahkan routing dan struktur dasar aplikasi
+[33m8c206ee[m chore: setup tailwindcss dan konfigurasi dasar frontend
+[33m1314606[m chore: registrasi endpoint dashboard pada backend
+[33mbd2998d[m chore: registrasi router dashboard ke dalam aplikasi
+[33mbfa29cd[m feat: menambahkan endpoint dashboard (stats, distribution, growth, trend)
+[33ma9f3603[m chore: update .gitignore frontend
+[33mff532b1[m feat: menambahkan API review dan export data scraper
+[33md443761[m chore: hapus file environment dan cache
+[33mb15143c[m init project skripsi
