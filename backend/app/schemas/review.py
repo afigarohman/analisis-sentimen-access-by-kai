@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, computed_field
 
+from app.ml.aspect_rules import classify_aspect
+
 # Star rating → fixed 5-class labels (thesis mapping)
 SCORE_TO_KELAS = {
     1: "jelek sekali",
@@ -33,3 +35,8 @@ class ReviewRead(BaseModel):
     @property
     def kelas_skor(self) -> str:
         return SCORE_TO_KELAS.get(self.score, "tidak diketahui")
+
+    @computed_field
+    @property
+    def aspect(self) -> str:
+        return classify_aspect(self.content)

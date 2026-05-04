@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.models.review import Review
+from app.ml.aspect_rules import ASPECTS, classify_aspect
 
 router = APIRouter()
 
@@ -86,3 +87,30 @@ def sentiment_trend(db: Session = Depends(get_db)) -> list[dict]:
             }
         )
     return out
+
+
+@router.get("/aspect-distribution")
+def aspect_distribution(db: Session = Depends(get_db)) -> list[dict]:
+    stmt = select(Review.content)
+    contents = db.scalars(stmt).all()
+
+    counts: dict[str, int] = {a: 0 for a in ASPECTS}
+    for c in contents:
+        a = classify_aspect(c)
+        counts[a] = counts.get(a, 0) + 1
+
+    # Keep stable order for frontend charts.
+    return [{"aspect": a, "total": int(counts.get(a, 0))} for a in ASPECTS]
+
+
+@router.get("/negative-aspect-insights")
+def negative_aspect_insights(db: Session = Depends(get_db)) -> list[dict]:
+    stmt = select(Review.content).where(Review.score.in_([1, 2]))
+    contents = db.scalars(stmt).all()
+
+    counts: dict[str, int] = {a: 0 for a in ASPECTS}
+    for c in contents:
+        a = classify_aspect(c)
+        counts[a] = counts.get(a, 0) + 1
+
+    return [{"aspect": a, "total": int(counts.get(a, 0))} for a in ASPECTS if counts.get(a, 0) > 0]

@@ -7,10 +7,12 @@ from sqlalchemy import text
 
 from app.core.database import Base, engine
 from app.models.review import Review
+from app.models.user import User  # noqa: F401 — register table metadata
 
 from app.routers.reviews import router as reviews_router
 from app.routers.dashboard import router as dashboard_router
 from app.routers.ai import router as ai_router
+from app.routers.auth import router as auth_router
 
 
 def _ensure_review_columns() -> None:
@@ -46,6 +48,7 @@ app.add_middleware(
 Base.metadata.create_all(bind=engine)
 _ensure_review_columns()
 
+app.include_router(auth_router, prefix="/auth", tags=["auth"])
 app.include_router(reviews_router)
 app.include_router(dashboard_router, prefix="/dashboard", tags=["dashboard"])
 app.include_router(ai_router, prefix="/ai", tags=["ai"])
