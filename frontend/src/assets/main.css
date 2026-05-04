@@ -14,3 +14,9 @@ body {
 #app {
   min-height: 100vh;
 }
+
+@layer base {
+  html {
+    @apply font-sans antialiased;
+  }
+}

@@ -1,8 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onUnmounted, ref } from 'vue'
 import { isAxiosError } from 'axios'
-import type { Plugin } from 'chart.js'
-import { Doughnut, Line } from 'vue-chartjs'
 
 import {
   predictSentiment,
@@ -10,101 +8,21 @@ import {
   type SentimentPredictionResponse,
   type TrainResponse,
 } from '@/api/ai'
-import {
-  fetchSentimentDistribution,
-  type SentimentDistributionItem,
-} from '@/api/dashboard'
+import DashboardCardShell from '@/components/dashboard/DashboardCardShell.vue'
 
-// --- Summary KPI (dummy dashboard) ---
-const kpis = computed(() => [
-  { label: 'Total Reviews', value: '2,650', hint: '+12% minggu ini' },
-  { label: 'Positive %', value: '72%', hint: 'Skor 4–5 dominan' },
-  { label: 'Negative %', value: '11%', hint: 'Perlu perhatian' },
-  { label: 'AI Replies', value: '438', hint: 'Menunggu approval' },
-])
-
-const lineData = computed(() => ({
-  labels: ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'],
-  datasets: [
-    {
-      label: 'Reviews',
-      data: [120, 160, 140, 210, 180, 260, 230],
-      borderColor: '#60a5fa',
-      backgroundColor: 'rgba(96, 165, 250, 0.15)',
-      fill: true,
-      tension: 0.35,
-      pointRadius: 2,
-      borderWidth: 2,
-    },
-  ],
+// Dipakai hanya blok training tersembunyi (v-if="false").
+const summaryLoading = ref(false)
+const summaryError = ref<string | null>(null)
+const summaryCounts = computed(() => ({
+  total: 0,
+  positive: 0,
+  neutral: 0,
+  negative: 0,
 }))
-
-const lineOptions = {
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: {
-    legend: { display: false },
-  },
-  scales: {
-    x: { grid: { display: false }, ticks: { color: '#94a3b8' } },
-    y: {
-      grid: { color: 'rgba(148,163,184,0.15)' },
-      ticks: { color: '#94a3b8' },
-    },
-  },
-}
-
-const pieData = computed(() => ({
-  labels: ['Positive', 'Neutral', 'Negative'],
-  datasets: [
-    {
-      data: [72, 17, 11],
-      backgroundColor: ['#3b82f6', '#a855f7', '#ef4444'],
-      borderWidth: 0,
-    },
-  ],
-}))
-
-const pieOptions = {
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: {
-    glow: { color: 'rgba(168,85,247,0.35)', blur: 22 },
-    legend: {
-      position: 'bottom' as const,
-      labels: {
-        color: '#94a3b8',
-        boxWidth: 10,
-        padding: 14,
-        font: { size: 11 },
-      },
-    },
-  },
-  cutout: '65%',
-}
-
-const glowPlugin: Plugin<'doughnut'> = {
-  id: 'glow',
-  beforeDatasetDraw(chart) {
-    const ctx = chart.ctx
-    const opts = (
-      chart.config.options as
-        | { plugins?: { glow?: { color: string; blur: number } } }
-        | undefined
-    )?.plugins?.glow
-    if (!opts) return
-    ctx.save()
-    ctx.shadowColor = opts.color
-    ctx.shadowBlur = opts.blur
-  },
-  afterDatasetDraw(chart) {
-    chart.ctx.restore()
-  },
-}
 
 // --- AI Predict (analisis) ---
 const inputText = ref('')
-const result = ref<SentimentPredictionResponse['result'] | null>(null)
+const result = ref<SentimentPredictionResponse | null>(null)
 const echoedText = ref<string | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
@@ -205,58 +123,17 @@ async function analyze() {
   pipelineActiveIndex.value = 2
 
   try {
+    console.log('[AIPipeline] predict request text:', text)
     const data = await predictSentiment(text)
+    console.log('[AIPipeline] predict response:', data)
     echoedText.value = data.text
-    result.value = data.result
+    result.value = data
     pipelineActiveIndex.value = 3
   } catch (e) {
     error.value = parseApiError(e)
     pipelineActiveIndex.value = -1
   } finally {
     loading.value = false
-  }
-}
-
-// --- Data summary (pre-training) ---
-const summaryLoading = ref(false)
-const summaryError = ref<string | null>(null)
-const summaryItems = ref<SentimentDistributionItem[] | null>(null)
-
-const summaryCounts = computed(() => {
-  const items =
-    summaryItems.value ??
-    ([
-      { score: 1, total: 140 },
-      { score: 2, total: 150 },
-      { score: 3, total: 420 },
-      { score: 4, total: 980 },
-      { score: 5, total: 960 },
-    ] satisfies SentimentDistributionItem[])
-
-  const total = items.reduce((acc, x) => acc + (x.total ?? 0), 0)
-  const positive = items
-    .filter((x) => x.score === 4 || x.score === 5)
-    .reduce((acc, x) => acc + x.total, 0)
-  const neutral = items
-    .filter((x) => x.score === 3)
-    .reduce((acc, x) => acc + x.total, 0)
-  const negative = items
-    .filter((x) => x.score === 1 || x.score === 2)
-    .reduce((acc, x) => acc + x.total, 0)
-
-  return { total, positive, neutral, negative }
-})
-
-async function loadSummary() {
-  summaryLoading.value = true
-  summaryError.value = null
-  try {
-    summaryItems.value = await fetchSentimentDistribution()
-  } catch (e) {
-    summaryError.value = parseApiError(e)
-    summaryItems.value = null
-  } finally {
-    summaryLoading.value = false
   }
 }
 
@@ -408,112 +285,35 @@ async function startTraining() {
   }
 }
 
-onMounted(loadSummary)
-
 onUnmounted(() => {
   clearTrainingTimers()
 })
 </script>
 
 <template>
-  <div
-    class="relative min-h-full overflow-hidden rounded-2xl bg-gradient-to-br from-blue-950/90 via-slate-950/95 to-slate-900 p-4 sm:p-6"
-  >
-    <div
-      class="pointer-events-none absolute -top-24 left-1/2 h-[480px] w-[480px] -translate-x-1/2 rounded-full bg-gradient-to-tr from-blue-600/25 via-indigo-500/15 to-transparent blur-3xl"
-    />
-    <div
-      class="pointer-events-none absolute -bottom-32 -right-16 h-[420px] w-[420px] rounded-full bg-gradient-to-tl from-slate-800/40 via-blue-900/20 to-transparent blur-3xl"
-    />
-
-    <div class="relative mx-auto w-full max-w-6xl space-y-6">
-      <!-- Header -->
-      <section
-        class="relative overflow-hidden rounded-xl border border-white/10 bg-white/5 p-6 shadow-[0_0_30px_rgba(59,130,246,0.3)] backdrop-blur-xl transition hover:shadow-[0_0_40px_rgba(59,130,246,0.4)]"
-      >
-        <div
-          class="pointer-events-none absolute -left-16 -top-16 h-48 w-48 rounded-full bg-blue-500/20 blur-2xl"
-        />
-        <h2 class="relative text-lg font-semibold tracking-tight text-white">
+  <div class="mx-auto w-full max-w-6xl space-y-4 sm:space-y-6">
+    <!-- Header -->
+      <DashboardCardShell tag="section" variant="offset" class="p-6">
+        <div>
+        <h2 class="text-lg font-semibold tracking-tight text-white">
           <span
-            class="bg-gradient-to-r from-blue-200 via-cyan-200 to-blue-100 bg-clip-text text-transparent"
+            class="bg-gradient-to-r from-purple-200 via-fuchsia-200 to-purple-100 bg-clip-text text-transparent"
           >
             AI Pipeline
           </span>
         </h2>
-        <p class="relative mt-1 text-sm text-slate-300/90">
-          Dashboard AI: statistik, analisis sentimen, dan training model (TF-IDF +
+        <p class="mt-1 text-sm text-slate-300/85">
+          Alur pipeline, uji klasifikasi sentimen, dan training model (TF-IDF +
           Logistic Regression).
         </p>
-      </section>
-
-      <!-- KPI -->
-      <section class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div
-          v-for="k in kpis"
-          :key="k.label"
-          class="group relative overflow-hidden rounded-xl border border-white/10 bg-white/5 p-5 shadow-[0_0_24px_rgba(59,130,246,0.2)] backdrop-blur-xl transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_0_32px_rgba(59,130,246,0.35)]"
-        >
-          <div
-            class="pointer-events-none absolute -right-24 -top-24 h-56 w-56 rounded-full bg-gradient-to-tr from-blue-500/18 via-purple-500/16 to-red-500/12 blur-2xl opacity-80 transition group-hover:opacity-100"
-          />
-          <p class="text-xs font-semibold text-slate-400">{{ k.label }}</p>
-          <p class="mt-2 text-2xl font-extrabold tracking-tight text-white">
-            {{ k.value }}
-          </p>
-          <p class="mt-1 text-xs text-slate-400">{{ k.hint }}</p>
         </div>
-      </section>
-
-      <!-- Charts -->
-      <section class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div
-          class="group relative overflow-hidden lg:col-span-2 rounded-xl border border-white/10 bg-white/5 p-6 shadow-[0_0_30px_rgba(59,130,246,0.25)] backdrop-blur-xl transition hover:shadow-[0_0_36px_rgba(59,130,246,0.35)]"
-        >
-          <div
-            class="pointer-events-none absolute -left-24 -bottom-24 h-72 w-72 rounded-full bg-gradient-to-tr from-blue-500/18 via-purple-500/16 to-red-500/12 blur-2xl opacity-80 transition group-hover:opacity-100"
-          />
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm font-semibold text-white">Trend ulasan</p>
-              <p class="mt-0.5 text-xs text-slate-400">Ringkasan mingguan (demo)</p>
-            </div>
-            <span
-              class="rounded-full bg-blue-500/15 px-3 py-1 text-xs font-semibold text-blue-300"
-            >
-              Statistik
-            </span>
-          </div>
-          <div class="mt-4 h-72">
-            <Line :data="lineData" :options="lineOptions" />
-          </div>
-        </div>
-
-        <div
-          class="group relative overflow-hidden rounded-xl border border-white/10 bg-white/5 p-6 shadow-[0_0_30px_rgba(59,130,246,0.25)] backdrop-blur-xl transition hover:shadow-[0_0_36px_rgba(59,130,246,0.35)]"
-        >
-          <div
-            class="pointer-events-none absolute -right-24 -bottom-24 h-72 w-72 rounded-full bg-gradient-to-tr from-purple-500/18 via-blue-500/14 to-red-500/10 blur-2xl opacity-80 transition group-hover:opacity-100"
-          />
-          <p class="text-sm font-semibold text-white">Distribusi sentimen</p>
-          <p class="mt-0.5 text-xs text-slate-400">Positive / Neutral / Negative</p>
-          <div class="mt-4 h-72">
-            <Doughnut
-              :data="pieData"
-              :options="pieOptions"
-              :plugins="[glowPlugin]"
-            />
-          </div>
-        </div>
-      </section>
+      </DashboardCardShell>
 
       <!-- Pipeline flow (analisis) -->
-      <section
-        class="relative overflow-hidden rounded-xl border border-white/10 bg-white/5 p-6 shadow-[0_0_30px_rgba(59,130,246,0.25)] backdrop-blur-xl"
-      >
+      <DashboardCardShell tag="section" variant="tl" class="p-6">
         <div>
           <p class="text-sm font-semibold text-white">Pipeline analisis</p>
-          <p class="mt-0.5 text-xs text-slate-400">
+          <p class="mt-0.5 text-xs text-slate-300/85">
             Alur saat Anda menjalankan tes sentimen di bawah
           </p>
         </div>
@@ -524,13 +324,13 @@ onUnmounted(() => {
           >
             <template v-for="(s, idx) in pipelineSteps" :key="s.title">
               <div
-                class="w-[9.5rem] shrink-0 rounded-xl border px-3 py-3 transition-all duration-500 sm:w-auto sm:flex-1"
+                class="w-[9.5rem] shrink-0 rounded-xl border px-3 py-3 duration-500 sm:w-auto sm:flex-1"
                 :class="
                   pipelineActiveIndex === idx
-                    ? 'border-blue-400/70 bg-blue-500/15 shadow-[0_0_24px_-4px_rgba(59,130,246,0.65)]'
+                    ? 'border-fuchsia-400/55 bg-fuchsia-500/12 shadow-[0_0_28px_-6px_rgba(217,70,239,0.55)] transition-all'
                     : pipelineActiveIndex > idx
-                      ? 'border-emerald-500/25 bg-emerald-500/5'
-                      : 'border-white/10 bg-slate-950/40'
+                      ? 'border-emerald-500/30 bg-emerald-500/8 transition-all'
+                      : 'border-white/10 bg-slate-950/40 transition duration-300 hover:-translate-y-0.5 hover:border-purple-400/35 hover:shadow-[0_18px_40px_-14px_rgba(168,85,247,0.35)]'
                 "
               >
                 <div class="flex items-start gap-2">
@@ -538,7 +338,7 @@ onUnmounted(() => {
                     class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold transition-colors duration-300"
                     :class="
                       pipelineActiveIndex === idx
-                        ? 'bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/40'
+                        ? 'bg-gradient-to-br from-purple-500 via-fuchsia-500 to-purple-600 text-white shadow-lg shadow-purple-500/45'
                         : pipelineActiveIndex > idx
                           ? 'bg-emerald-500/20 text-emerald-200'
                           : 'bg-slate-800 text-slate-400'
@@ -550,7 +350,7 @@ onUnmounted(() => {
                     <p class="truncate text-xs font-semibold text-white sm:text-sm">
                       {{ s.title }}
                     </p>
-                    <p class="truncate text-[11px] text-slate-400 sm:text-xs">
+                    <p class="truncate text-[11px] text-slate-300/80 sm:text-xs">
                       {{ s.subtitle }}
                     </p>
                   </div>
@@ -565,7 +365,7 @@ onUnmounted(() => {
                   class="h-0.5 w-6 rounded-full transition-colors duration-500 sm:w-10"
                   :class="
                     pipelineActiveIndex > idx
-                      ? 'bg-gradient-to-r from-emerald-400/80 to-blue-500/80'
+                      ? 'bg-gradient-to-r from-emerald-400/80 to-fuchsia-500/85'
                       : 'bg-slate-700/80'
                   "
                 />
@@ -573,7 +373,7 @@ onUnmounted(() => {
                   viewBox="0 0 24 24"
                   class="ml-0.5 h-4 w-4 shrink-0 transition-colors duration-500"
                   :class="
-                    pipelineActiveIndex > idx ? 'text-blue-400' : 'text-slate-600'
+                    pipelineActiveIndex > idx ? 'text-fuchsia-300' : 'text-slate-600'
                   "
                   fill="none"
                   stroke="currentColor"
@@ -589,24 +389,19 @@ onUnmounted(() => {
             </template>
           </div>
         </div>
-      </section>
+      </DashboardCardShell>
 
       <!-- AI Test -->
-      <section
-        class="relative overflow-hidden rounded-xl border border-white/10 bg-white/5 p-6 shadow-[0_0_30px_rgba(59,130,246,0.25)] backdrop-blur-xl"
-      >
-        <div
-          class="pointer-events-none absolute -right-20 -top-20 h-56 w-56 rounded-full bg-indigo-500/15 blur-3xl"
-        />
-        <h3 class="relative text-sm font-semibold text-white">AI Test — analisis sentimen</h3>
-        <p class="relative mt-0.5 text-xs text-slate-400">
+      <DashboardCardShell tag="section" variant="br" class="p-6">
+        <h3 class="text-sm font-semibold text-white">AI Test — analisis sentimen</h3>
+        <p class="mt-0.5 text-xs text-slate-300/85">
           Endpoint:
-          <code class="rounded bg-white/10 px-1 py-0.5 text-[11px] text-cyan-200/90"
+          <code class="rounded bg-white/10 px-1 py-0.5 text-[11px] text-fuchsia-200/90"
             >POST /ai/predict</code
           >
         </p>
 
-        <label class="relative mt-4 block text-sm font-medium text-slate-200">
+        <label class="mt-4 block text-sm font-medium text-slate-200">
           Ulasan
         </label>
         <textarea
@@ -614,43 +409,42 @@ onUnmounted(() => {
           rows="5"
           :disabled="loading"
           placeholder="Contoh: Aplikasinya cepat dan UI-nya enak dipakai."
-          class="relative mt-2 w-full resize-y rounded-xl border border-white/10 bg-slate-950/50 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-400/50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+          class="mt-2 w-full resize-y rounded-xl border border-white/10 bg-slate-950/55 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:border-fuchsia-400/45 focus:outline-none focus:ring-2 focus:ring-purple-500/35 disabled:cursor-not-allowed disabled:opacity-60"
         />
 
         <div
-          class="relative mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+          class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
         >
           <button
             type="button"
-            class="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-[0_8px_30px_-6px_rgba(37,99,235,0.65)] transition hover:from-blue-500 hover:to-indigo-500 hover:shadow-[0_12px_40px_-8px_rgba(59,130,246,0.75)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+            class="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-purple-600 via-fuchsia-600 to-purple-600 px-6 py-2.5 text-sm font-semibold text-white shadow-[0_10px_40px_-8px_rgba(168,85,247,0.75)] transition hover:shadow-[0_14px_48px_-10px_rgba(217,70,239,0.55)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
             :disabled="loading || !inputText.trim()"
             @click="analyze"
           >
             Analisis AI
           </button>
-          <p v-if="loading" class="text-sm font-medium text-cyan-200/90">
+          <p v-if="loading" class="text-sm font-medium text-fuchsia-200/90">
             AI sedang menganalisis…
           </p>
         </div>
 
         <div
           v-if="error"
-          class="relative mt-4 rounded-xl border border-red-400/35 bg-red-950/50 px-4 py-3 text-sm text-red-100 backdrop-blur-sm"
+          class="mt-4 rounded-xl border border-red-400/35 bg-red-950/50 px-4 py-3 text-sm text-red-100 backdrop-blur-sm transition duration-300 hover:border-red-300/45 hover:shadow-[0_16px_40px_-16px_rgba(239,68,68,0.28)]"
         >
           {{ error }}
         </div>
-      </section>
+      </DashboardCardShell>
 
       <!-- Result predict -->
-      <section
+      <DashboardCardShell
         v-if="result && !error"
-        class="relative overflow-hidden rounded-xl border border-white/10 bg-white/5 p-6 shadow-[0_0_36px_-10px_rgba(59,130,246,0.4)] backdrop-blur-xl transition duration-500"
+        tag="section"
+        variant="tm"
+        class="p-6 transition duration-500"
         :class="[sentimentStyles.ring, sentimentStyles.glow]"
       >
-        <div
-          class="pointer-events-none absolute -left-24 bottom-0 h-48 w-48 rounded-full bg-gradient-to-tr from-blue-500/20 to-transparent blur-3xl"
-        />
-        <div class="relative flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div class="min-w-0 flex-1">
             <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">
               Hasil
@@ -666,14 +460,19 @@ onUnmounted(() => {
             >
               {{ labelUi }}
             </span>
-            <p class="text-xs text-slate-400">
+            <p class="text-xs text-slate-300/85">
               Confidence:
               <span class="font-semibold text-white">{{ confidencePercent }}%</span>
+            </p>
+
+            <p class="text-xs text-slate-300/85">
+              Kategori:
+              <span class="font-semibold text-white">{{ result.aspect }}</span>
             </p>
           </div>
         </div>
 
-        <div class="relative mt-5">
+        <div class="mt-5">
           <div class="mb-1 flex justify-between text-[11px] text-slate-500">
             <span>Keyakinan model</span>
             <span>{{ confidencePercent }}%</span>
@@ -688,10 +487,11 @@ onUnmounted(() => {
             />
           </div>
         </div>
-      </section>
+      </DashboardCardShell>
 
       <!-- Training control -->
       <section
+        v-if="false"
         class="relative overflow-hidden rounded-xl border border-white/10 bg-white/5 p-6 shadow-[0_0_30px_rgba(59,130,246,0.25)] backdrop-blur-xl"
       >
         <h3 class="text-sm font-semibold text-white">Training control</h3>
@@ -818,13 +618,14 @@ onUnmounted(() => {
           v-if="trainingResult && !trainingError"
           class="mt-3 rounded-xl border border-emerald-400/25 bg-emerald-950/30 px-3 py-2 text-xs text-emerald-100"
         >
-          Sampel: {{ trainingResult.samples }} · Akurasi test:
-          {{ (trainingResult.accuracy * 100).toFixed(2) }}%
+          Sampel: {{ trainingResult!.samples }} · Akurasi test:
+          {{ (trainingResult!.accuracy * 100).toFixed(2) }}%
         </div>
       </section>
 
       <!-- Speedometer training viz -->
       <section
+        v-if="false"
         class="relative overflow-hidden rounded-xl border border-white/10 bg-white/5 p-6 shadow-[0_0_30px_rgba(59,130,246,0.3)] backdrop-blur-xl"
       >
         <h3 class="text-center text-sm font-semibold text-white">
@@ -887,6 +688,5 @@ onUnmounted(() => {
           </div>
         </div>
       </section>
-    </div>
   </div>
 </template>
