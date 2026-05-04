@@ -5,9 +5,13 @@ const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
-      path: '/',
+      path: '/dashboard',
       name: 'dashboard',
       component: DashboardView,
+    },
+    {
+      path: '/',
+      redirect: '/dashboard',
     },
     {
       path: '/about',
@@ -31,6 +35,16 @@ const router = createRouter({
       path: '/ai-pipeline',
       name: 'ai-pipeline',
       component: () => import('@/views/AIPipelineView.vue'),
+    },
+    {
+      path: '/masukan-ulasan',
+      name: 'masukan-ulasan',
+      component: () => import('@/views/MasukanUlasanView.vue'),
+    },
+    {
+      path: '/login',
+      name: 'login',
+      component: () => import('@/views/LoginView.vue'),
     },
   ],
 })

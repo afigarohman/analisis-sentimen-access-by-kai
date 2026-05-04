@@ -1,26 +1,24 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { RouterView } from 'vue-router'
+import { computed, ref } from 'vue'
+import { RouterView, useRoute } from 'vue-router'
 import DashboardSidebar from '@/components/dashboard/DashboardSidebar.vue'
+import MainContentSpotlight from '@/components/layout/MainContentSpotlight.vue'
+import { useMainSpotlightMode } from '@/composables/useMainSpotlightMode'
 
 const sidebarOpen = ref(false)
+const spotlightMode = useMainSpotlightMode()
+const route = useRoute()
+const isAuthOnlyLayout = computed(() => route.name === 'login')
 </script>
 
 <template>
+  <div v-if="isAuthOnlyLayout" class="min-h-screen bg-[#07070d] antialiased">
+    <RouterView />
+  </div>
   <div
-    class="relative min-h-screen overflow-hidden bg-slate-50 text-slate-800 dark:bg-gradient-to-br dark:from-slate-950 dark:via-blue-950 dark:to-slate-900 dark:text-white"
+    v-else
+    class="relative min-h-screen overflow-x-hidden bg-slate-50 font-sans text-slate-800 dark:bg-[#0a0a0c] dark:text-white"
   >
-    <!-- Global spotlight glow (dark only) -->
-    <div
-      class="pointer-events-none absolute -top-28 left-1/2 h-[680px] w-[680px] -translate-x-1/2 rounded-full bg-gradient-to-tr from-blue-500/26 via-purple-500/18 to-red-500/12 blur-2xl opacity-0 dark:opacity-100"
-    />
-    <div
-      class="pointer-events-none absolute -top-14 right-6 h-[560px] w-[560px] rounded-full bg-gradient-to-tr from-purple-500/22 via-blue-500/14 to-transparent blur-2xl opacity-0 dark:opacity-100"
-    />
-    <div
-      class="pointer-events-none absolute -bottom-52 left-8 h-[620px] w-[620px] rounded-full bg-gradient-to-tr from-red-500/16 via-purple-500/14 to-transparent blur-2xl opacity-0 dark:opacity-100"
-    />
-
     <!-- Mobile overlay -->
     <button
       v-if="sidebarOpen"
@@ -31,7 +29,7 @@ const sidebarOpen = ref(false)
 
     <!-- Hamburger / X button -->
     <button
-      class="fixed left-4 top-4 z-50 rounded-xl bg-white/70 p-2 shadow-md backdrop-blur transition md:hidden dark:bg-slate-950/50 dark:shadow-blue-500/10"
+      class="fixed left-4 top-4 z-50 rounded-xl border border-white/10 bg-white/70 p-2 shadow-md shadow-purple-500/10 backdrop-blur transition md:hidden dark:bg-slate-950/60 dark:shadow-[0_0_28px_-6px_rgba(168,85,247,0.45)]"
       aria-label="Toggle sidebar"
       @click="sidebarOpen = !sidebarOpen"
     >
@@ -61,20 +59,21 @@ const sidebarOpen = ref(false)
       </svg>
     </button>
 
-    <!-- Desktop layout: sidebar left, content right -->
-    <div class="relative flex min-h-screen">
-      <DashboardSidebar
-        :open="sidebarOpen"
-        class="w-72 md:w-64"
-        @close="sidebarOpen = false"
-      />
+    <!-- Sidebar fixed; konten digeser dengan padding kiri di desktop -->
+    <DashboardSidebar
+      :open="sidebarOpen"
+      class="w-72 md:w-64"
+      @close="sidebarOpen = false"
+    />
 
-      <main class="relative min-w-0 flex-1">
-        <div class="p-4 sm:p-6">
-          <RouterView />
-        </div>
-      </main>
-    </div>
+    <main
+      class="relative z-[5] min-h-screen min-w-0 overflow-x-hidden md:pl-64"
+    >
+      <MainContentSpotlight :mode="spotlightMode" />
+      <div class="relative z-10 min-h-[inherit] p-4 sm:p-6">
+        <RouterView />
+      </div>
+    </main>
   </div>
 </template>
 
