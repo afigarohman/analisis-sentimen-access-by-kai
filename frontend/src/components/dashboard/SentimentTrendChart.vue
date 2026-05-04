@@ -1,35 +1,19 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { Line } from 'vue-chartjs'
+import type { ChartOptions } from 'chart.js'
 
 import type { SentimentTrendItem } from '@/api/dashboard'
+import { linePointGlowPlugin } from '@/charts/linePointGlowPlugin'
 
-const SCORE_LABELS: Record<number, string> = {
-  1: 'Jelek sekali',
-  2: 'Jelek',
-  3: 'Netral',
-  4: 'Baik',
-  5: 'Baik sekali',
-}
-
-// Brand-ish colors (no pink neon)
-const COLORS: Record<number, string> = {
-  1: '#ef4444', // red
-  2: '#a855f7', // purple
-  3: '#94a3b8', // slate
-  4: '#3b82f6', // blue
-  5: '#60a5fa', // light blue
-}
+type RangeKey = 'day' | 'week' | 'month' | 'year'
+const range = ref<RangeKey>('day')
 
 const props = defineProps<{
   items: SentimentTrendItem[]
 }>()
 
-type RangeKey = 'day' | 'week' | 'month' | 'year'
-const range = ref<RangeKey>('day')
-
 function toDate(d: string) {
-  // input is YYYY-MM-DD
   const parts = d.split('-')
   const y = Number(parts[0] ?? 1970)
   const m = Number(parts[1] ?? 1)
@@ -46,117 +30,262 @@ function fmtYMD(dt: Date) {
 
 function startOfWeekMonday(dt: Date) {
   const d = new Date(dt)
-  const day = d.getDay() // 0..6 (Sun..Sat)
+  const day = d.getDay()
   const diff = (day === 0 ? -6 : 1) - day
   d.setDate(d.getDate() + diff)
   d.setHours(0, 0, 0, 0)
   return d
 }
 
-const normalized = computed(() => {
-  const items = props.items
-  const out: { key: string; score: number; total: number }[] = []
-  for (const it of items) {
+/** Agregasi per bucket: volumen tidak digabung jadi satu seri mentah seperti review-growth. */
+type BucketTotals = { pos: number; neu: number; neg: number }
+
+const buckets = computed(() => {
+  const map = new Map<string, BucketTotals>()
+  for (const it of props.items) {
     const dt = toDate(it.date)
     let key = it.date
     if (range.value === 'week') key = fmtYMD(startOfWeekMonday(dt))
     else if (range.value === 'month')
       key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
     else if (range.value === 'year') key = String(dt.getFullYear())
-    out.push({ key, score: it.score, total: it.total })
+
+    const cur = map.get(key) ?? { pos: 0, neu: 0, neg: 0 }
+    const t = Number(it.total ?? 0)
+    if ([4, 5].includes(Number(it.score))) cur.pos += t
+    else if (Number(it.score) === 3) cur.neu += t
+    else cur.neg += t
+    map.set(key, cur)
   }
-  // aggregate
-  const map = new Map<string, number>()
-  for (const r of out) {
-    const k = `${r.key}__${r.score}`
-    map.set(k, (map.get(k) ?? 0) + r.total)
-  }
-  return { map, keys: [...new Set(out.map((r) => r.key))].sort() }
+  const keys = [...map.keys()].sort()
+  const posArr = keys.map((k) => map.get(k)!.pos)
+  const neuArr = keys.map((k) => map.get(k)!.neu)
+  const negArr = keys.map((k) => map.get(k)!.neg)
+  return { labels: keys, posArr, neuArr, negArr }
+})
+
+const headline = computed(() => {
+  const n = buckets.value.labels.length
+  if (!n) return '—'
+  const i = n - 1
+  const t =
+    buckets.value.negArr[i]! +
+    buckets.value.neuArr[i]! +
+    buckets.value.posArr[i]!
+  return `${t.toLocaleString('id-ID')} ulasan`
+})
+
+const pctLine = computed(() => {
+  const n = buckets.value.labels.length
+  if (!n) return ''
+  const i = n - 1
+  const pos = buckets.value.posArr[i] ?? 0
+  const neu = buckets.value.neuArr[i] ?? 0
+  const neg = buckets.value.negArr[i] ?? 0
+  const tot = pos + neu + neg
+  if (!tot) return ''
+  const pPos = Math.round((pos / tot) * 1000) / 10
+  const pNeu = Math.round((neu / tot) * 1000) / 10
+  const pNeg = Math.round((neg / tot) * 1000) / 10
+  return `Periode akhir · ${pPos}% pos · ${pNeu}% net · ${pNeg}% neg`
 })
 
 const chartData = computed(() => {
-  const dates = normalized.value.keys
-  const scores = [1, 2, 3, 4, 5]
+  const { labels, negArr, neuArr, posArr } = buckets.value
   return {
-    labels: dates,
-    datasets: scores.map((score) => ({
-      label: SCORE_LABELS[score],
-      data: dates.map((d) => normalized.value.map.get(`${d}__${score}`) ?? 0),
-      borderColor: COLORS[score],
-      backgroundColor: 'transparent',
-      tension: 0.25,
-      pointRadius: 2,
-      borderWidth: 2,
-    })),
+    labels,
+    datasets: [
+      {
+        label: 'Negatif (1–2)',
+        data: negArr,
+        stack: 'vol',
+        borderColor: 'rgba(251, 113, 133, 0.95)',
+        backgroundColor: 'rgba(251, 113, 133, 0.24)',
+        fill: true,
+        tension: 0.38,
+        borderWidth: 1.5,
+        pointRadius: 0,
+      },
+      {
+        label: 'Netral (3)',
+        data: neuArr,
+        stack: 'vol',
+        borderColor: 'rgba(148, 163, 184, 0.9)',
+        backgroundColor: 'rgba(148, 163, 184, 0.22)',
+        fill: true,
+        tension: 0.38,
+        borderWidth: 1.5,
+        pointRadius: 0,
+      },
+      {
+        label: 'Positif (4–5)',
+        data: posArr,
+        stack: 'vol',
+        borderColor: 'rgba(139, 92, 246, 0.98)',
+        backgroundColor: 'rgba(139, 92, 246, 0.32)',
+        fill: true,
+        tension: 0.38,
+        borderWidth: 1.5,
+        pointRadius: 0,
+      },
+    ],
   }
 })
 
-const options = {
+const rangeLabel = computed(() => {
+  if (range.value === 'day') return 'Per hari'
+  if (range.value === 'week') return 'Per minggu'
+  if (range.value === 'month') return 'Per bulan'
+  return 'Per tahun'
+})
+
+const options = computed<ChartOptions<'line'>>(() => ({
   responsive: true,
   maintainAspectRatio: false,
-  interaction: { intersect: false, mode: 'index' as const },
+  interaction: { intersect: false, mode: 'index' },
   plugins: {
     legend: {
-      position: 'top' as const,
-      labels: { boxWidth: 10, padding: 12, font: { size: 11 } },
+      display: true,
+      position: 'bottom',
+      labels: {
+        boxWidth: 10,
+        boxHeight: 10,
+        usePointStyle: true,
+        pointStyle: 'rectRounded',
+        padding: 16,
+        color: 'rgba(226,232,240,0.82)',
+        font: { family: "'Inter', system-ui, sans-serif", size: 11 },
+      },
+    },
+    tooltip: {
+      enabled: true,
+      backgroundColor: 'rgba(15, 23, 42, 0.94)',
+      titleColor: 'rgba(248, 250, 252, 0.96)',
+      bodyColor: 'rgba(226, 232, 240, 0.92)',
+      borderColor: 'rgba(255,255,255,0.08)',
+      borderWidth: 1,
+      padding: 12,
+      callbacks: {
+        title(ctx) {
+          return String(ctx[0]?.label ?? '')
+        },
+        footer(ctxItems) {
+          const items = [...ctxItems]
+          const neg = Number(items.find((x) => x.datasetIndex === 0)?.parsed.y ?? 0)
+          const neu = Number(items.find((x) => x.datasetIndex === 1)?.parsed.y ?? 0)
+          const pos = Number(items.find((x) => x.datasetIndex === 2)?.parsed.y ?? 0)
+          const sum = neg + neu + pos
+          return [`Total periode: ${sum.toLocaleString('id-ID')}`]
+        },
+        label(ctx) {
+          const v = ctx.parsed.y
+          return ` ${ctx.dataset.label}: ${Number(v).toLocaleString('id-ID')}`
+        },
+      },
     },
   },
   scales: {
     x: {
-      grid: { display: false },
-      ticks: { maxRotation: 45, font: { size: 11 } },
+      stacked: true,
+      grid: { display: false, drawBorder: false },
+      ticks: {
+        color: 'rgba(226,232,240,0.45)',
+        maxRotation: 0,
+        autoSkip: true,
+        maxTicksLimit: 10,
+        font: { family: "'Inter', system-ui, sans-serif", size: 11 },
+      },
     },
     y: {
+      stacked: true,
       beginAtZero: true,
-      grid: { color: 'rgba(148,163,184,0.18)' },
-      ticks: { precision: 0 },
+      grid: { color: 'rgba(255,255,255,0.06)', drawBorder: false },
+      ticks: {
+        color: 'rgba(226,232,240,0.38)',
+        precision: 0,
+        font: { family: "'Inter', system-ui, sans-serif", size: 11 },
+      },
     },
   },
+}))
+
+function rangeBtn(active: boolean) {
+  return active
+    ? 'border-[#8b5cf6]/35 bg-white/[0.08] text-white shadow-[0_0_22px_-8px_rgba(139,92,246,0.35)]'
+    : 'border-white/[0.07] bg-white/[0.03] text-slate-300 hover:border-white/[0.12] hover:bg-white/[0.05]'
 }
 </script>
 
 <template>
-  <div class="relative h-80 w-full">
-    <div class="mb-3 flex flex-wrap gap-2">
-      <button
-        type="button"
-        class="rounded-xl px-3 py-1.5 text-xs font-semibold shadow-sm transition"
-        :class="range === 'day' ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-700 dark:bg-slate-950/35 dark:text-slate-200'"
-        @click="range = 'day'"
-      >
-        Hari
-      </button>
-      <button
-        type="button"
-        class="rounded-xl px-3 py-1.5 text-xs font-semibold shadow-sm transition"
-        :class="range === 'week' ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-700 dark:bg-slate-950/35 dark:text-slate-200'"
-        @click="range = 'week'"
-      >
-        Minggu
-      </button>
-      <button
-        type="button"
-        class="rounded-xl px-3 py-1.5 text-xs font-semibold shadow-sm transition"
-        :class="range === 'month' ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-700 dark:bg-slate-950/35 dark:text-slate-200'"
-        @click="range = 'month'"
-      >
-        Bulan
-      </button>
-      <button
-        type="button"
-        class="rounded-xl px-3 py-1.5 text-xs font-semibold shadow-sm transition"
-        :class="range === 'year' ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-700 dark:bg-slate-950/35 dark:text-slate-200'"
-        @click="range = 'year'"
-      >
-        Tahun
-      </button>
+  <div class="flex flex-col gap-4">
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div class="min-w-0">
+        <p class="text-sm font-semibold tracking-tight text-white">
+          Tren volume per sentimen
+        </p>
+        <p
+          class="mt-1 text-3xl font-extrabold tracking-tight text-white tabular-nums"
+        >
+          {{ headline }}
+        </p>
+        <p class="mt-1 text-xs leading-relaxed text-slate-400">
+          Area bertumpuk: volume ulasan negatif, netral, dan positif per
+          {{ rangeLabel }}.
+        </p>
+        <p v-if="pctLine" class="mt-0.5 text-xs font-medium text-slate-300">
+          {{ pctLine }}
+        </p>
+      </div>
+
+      <div class="flex flex-wrap gap-2">
+        <button
+          type="button"
+          class="rounded-full border px-3 py-1.5 text-[11px] font-semibold tracking-tight transition"
+          :class="rangeBtn(range === 'day')"
+          @click="range = 'day'"
+        >
+          Hari
+        </button>
+        <button
+          type="button"
+          class="rounded-full border px-3 py-1.5 text-[11px] font-semibold tracking-tight transition"
+          :class="rangeBtn(range === 'week')"
+          @click="range = 'week'"
+        >
+          Minggu
+        </button>
+        <button
+          type="button"
+          class="rounded-full border px-3 py-1.5 text-[11px] font-semibold tracking-tight transition"
+          :class="rangeBtn(range === 'month')"
+          @click="range = 'month'"
+        >
+          Bulan
+        </button>
+        <button
+          type="button"
+          class="rounded-full border px-3 py-1.5 text-[11px] font-semibold tracking-tight transition"
+          :class="rangeBtn(range === 'year')"
+          @click="range = 'year'"
+        >
+          Tahun
+        </button>
+      </div>
     </div>
-    <Line v-if="items.length" :data="chartData" :options="options" />
-    <p
-      v-else
-      class="flex h-full items-center justify-center text-sm text-slate-500"
-    >
-      Belum ada data tren
-    </p>
+
+    <div class="relative h-72 w-full sm:h-80">
+      <Line
+        v-if="props.items.length"
+        :data="chartData"
+        :options="options"
+        :plugins="[linePointGlowPlugin]"
+      />
+      <p
+        v-else
+        class="flex h-full items-center justify-center text-sm text-slate-500"
+      >
+        Belum ada data tren
+      </p>
+    </div>
   </div>
 </template>

@@ -24,6 +24,16 @@ export interface SentimentTrendItem {
   total: number
 }
 
+export interface AspectDistributionItem {
+  aspect: string
+  total: number
+}
+
+export interface NegativeAspectInsightItem {
+  aspect: string
+  total: number
+}
+
 export async function fetchDashboardStats(): Promise<DashboardStats> {
   const { data } = await api.get<DashboardStats>('/dashboard/stats')
   return data
@@ -48,6 +58,24 @@ export async function fetchReviewGrowth(): Promise<ReviewGrowthItem[]> {
 export async function fetchSentimentTrend(): Promise<SentimentTrendItem[]> {
   const { data } = await api.get<SentimentTrendItem[]>(
     '/dashboard/sentiment-trend',
+  )
+  return data
+}
+
+export async function fetchAspectDistribution(): Promise<
+  AspectDistributionItem[]
+> {
+  const { data } = await api.get<AspectDistributionItem[]>(
+    '/dashboard/aspect-distribution',
+  )
+  return data
+}
+
+export async function fetchNegativeAspectInsights(): Promise<
+  NegativeAspectInsightItem[]
+> {
+  const { data } = await api.get<NegativeAspectInsightItem[]>(
+    '/dashboard/negative-aspect-insights',
   )
   return data
 }

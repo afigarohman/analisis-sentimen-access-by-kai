@@ -1,5 +1,6 @@
 import {
   ArcElement,
+  BarElement,
   CategoryScale,
   Chart as ChartJS,
   Filler,
@@ -7,17 +8,22 @@ import {
   LinearScale,
   LineElement,
   PointElement,
+  RadarController,
+  RadialLinearScale,
   Title,
   Tooltip,
 } from 'chart.js'
 
 ChartJS.register(
   ArcElement,
+  BarElement,
   CategoryScale,
   Legend,
   LinearScale,
+  RadialLinearScale,
   LineElement,
   PointElement,
+  RadarController,
   Title,
   Tooltip,
   Filler,
