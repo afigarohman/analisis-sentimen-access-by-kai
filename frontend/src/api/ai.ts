@@ -1,11 +1,14 @@
 import { api } from "./client";
 
+/* =========================
+   TYPES
+========================= */
+
 export type SentimentPredictionResponse = {
   text: string;
-  result: {
-    label: string;
-    confidence: number;
-  };
+  label: string;
+  confidence: number;
+  aspect: string;
 };
 
 export type ScrapeResponse = {
@@ -21,6 +24,43 @@ export type TrainResponse = {
   samples: number;
   artifacts_dir: string;
 };
+
+export type GenerateReplyResponse = {
+  reply: string;
+};
+
+export type InsightSample = {
+  text: string;
+  aspect: string;
+};
+
+export type InsightResponse = {
+  total_negative: number;
+  aspect_distribution: Record<string, number>;
+  top_issues: Array<{
+    aspect: string;
+    count: number;
+  }>;
+  samples: InsightSample[];
+};
+
+export type FeedbackItem = {
+  text: string;
+  aspect: string;
+  sentiment: string;
+  matched_keywords: string[];
+};
+
+export type FeedbackListResponse = {
+  total: number;
+  items: FeedbackItem[];
+  truncated?: boolean;
+  shown?: number;
+};
+
+/* =========================
+   API FUNCTIONS
+========================= */
 
 export async function predictSentiment(text: string) {
   const { data } = await api.post<SentimentPredictionResponse>("/ai/predict", {
@@ -43,9 +83,18 @@ export async function trainModel(samples?: number, maxFeatures?: number) {
 }
 
 export async function generateAIReply(content: string) {
-  const { data } = await api.post("/ai/generate-reply", {
+  const { data } = await api.post<GenerateReplyResponse>("/ai/generate-reply", {
     content,
   });
+  return data;
+}
 
+export async function getInsight(): Promise<InsightResponse> {
+  const { data } = await api.get<InsightResponse>("/ai/insight");
+  return data;
+}
+
+export async function getFeedbackList(): Promise<FeedbackListResponse> {
+  const { data } = await api.get<FeedbackListResponse>("/ai/feedback");
   return data;
 }

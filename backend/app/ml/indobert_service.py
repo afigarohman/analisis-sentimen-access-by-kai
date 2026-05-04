@@ -3,6 +3,8 @@ from transformers import BertTokenizer
 import numpy as np
 import os
 
+from app.ml.aspect_rules import classify_aspect
+
 BASE_DIR = os.path.dirname(__file__)
 MODEL_PATH = os.path.join(BASE_DIR, "indobert", "indobert_model.onnx")
 
@@ -28,12 +30,15 @@ CONTRAST_WORDS = [
 def predict_sentiment(text: str):
     text_lower = text.lower()
 
+    # Always compute aspect so callers never hit KeyError.
+    aspect = classify_aspect(text)
 
     if any(c in text_lower for c in CONTRAST_WORDS):
         if any(n in text_lower for n in NEGATIVE_CUES):
             return {
                 "label": "negative",
-                "confidence": 0.75
+                "confidence": 0.75,
+                "aspect": aspect,
             }
 
    
@@ -66,5 +71,6 @@ def predict_sentiment(text: str):
 
     return {
         "label": label,
-        "confidence": round(confidence, 4)
+        "confidence": round(confidence, 4),
+        "aspect": aspect,
     }

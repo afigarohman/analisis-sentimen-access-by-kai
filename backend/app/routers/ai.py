@@ -5,13 +5,17 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.ml.aspect_rules import ASPECTS, classify_aspect
+from app.ml.feedback_rules import is_feedback, matched_feedback_keywords
 from app.ml.data_export import export_reviews_for_training
 from app.ml.indobert_service import predict_sentiment as predict_sentiment_ml
 from app.ml.scrape_to_db import scrape_google_reviews_to_db
 from app.ml.train import train
+from app.models.review import Review
 
 router = APIRouter()
 
@@ -48,10 +52,45 @@ def extract_text(response) -> str:
 
     return ""
 
+def fallback_reply(content: str) -> str:
+    """
+    Fallback balasan sederhana jika provider LLM tidak tersedia.
+    Maks 2 kalimat, gaya santai, tanpa template kaku.
+    """
+    text = (content or "").strip()
+    t = text.lower()
 
-# =========================
-# 🔥 PREDICT SENTIMENT
-# =========================
+    # Heuristik ringan berbasis kata kunci.
+    bad = any(
+        w in t
+        for w in [
+            "ribet",
+            "lemot",
+            "lama",
+            "error",
+            "bug",
+            "gagal",
+            "tidak bisa",
+            "ga bisa",
+            "nggak bisa",
+            "kecewa",
+            "parah",
+            "tolong",
+            "susah",
+            "payah",
+        ]
+    )
+    good = any(w in t for w in ["bagus", "mantap", "membantu", "keren", "enak", "cepat", "love"])
+
+    if bad:
+        return "Makasih sudah kasih tahu ya—maaf jadi nggak nyaman. Kami coba cek dan perbaiki secepatnya."
+    if good:
+        return "Makasih banyak ya, senang banget kalau ini membantu. Kalau ada saran biar makin bagus, kabarin juga."
+    return "Makasih sudah kasih ulasan ya. Kalau boleh, detail kendalanya apa biar kami bisa bantu cek lebih cepat?"
+
+
+# PREDICT SENTIMENT
+
 @router.post("/predict")
 def predict_sentiment_api(body: PredictBody):
     text = body.text.strip()
@@ -65,7 +104,8 @@ def predict_sentiment_api(body: PredictBody):
         return {
             "text": text,
             "label": result["label"],
-            "confidence": result["confidence"]
+            "confidence": result["confidence"],
+            "aspect": result["aspect"],
         }
 
     except Exception as e:
@@ -76,9 +116,9 @@ def predict_sentiment_api(body: PredictBody):
         )
 
 
-# =========================
-# 🔥 SCRAPING
-# =========================
+
+# SCRAPING
+
 @router.post("/scrape")
 def scrape_reviews(body: ScrapeBody, db: Session = Depends(get_db)):
     try:
@@ -93,9 +133,8 @@ def scrape_reviews(body: ScrapeBody, db: Session = Depends(get_db)):
         )
 
 
-# =========================
-# 🔥 TRAIN MODEL
-# =========================
+# TRAIN MODEL
+
 @router.post("/train")
 def train_model(body: TrainBody, db: Session = Depends(get_db)):
     try:
@@ -131,9 +170,7 @@ def train_model(body: TrainBody, db: Session = Depends(get_db)):
         )
 
 
-# =========================
-# 🔥 GENERATE AI REPLY
-# =========================
+
 @router.post("/generate-reply")
 def generate_reply(body: GenerateReplyBody):
     content = body.content.strip()
@@ -144,7 +181,8 @@ def generate_reply(body: GenerateReplyBody):
     api_key = os.getenv("GOOGLE_API_KEY")
 
     if not api_key:
-        raise HTTPException(status_code=500, detail="GOOGLE_API_KEY belum diset")
+        # Biar fitur tetap jalan di environment tanpa API key.
+        return {"reply": fallback_reply(content)}
 
     prompt = f"""
 Kamu adalah admin manusia (bukan bot) dari aplikasi Access by KAI.
@@ -184,7 +222,108 @@ Balasan:
 
     except Exception as e:
         traceback.print_exc()
-        raise HTTPException(
-            status_code=502,
-            detail=f"Gagal generate AI: {str(e)}"
+        # Jika provider gagal (quota, network, dll), tetap berikan balasan fallback.
+        return {"reply": fallback_reply(content)}
+
+@router.get("/feedback")
+def get_feedback(db: Session = Depends(get_db)):
+    """
+    Ulasan yang mengandung saran / permintaan perbaikan (rule-based keywords),
+    bukan filter utama berdasarkan sentimen negatif.
+    """
+    stmt = select(Review)
+    reviews = db.scalars(stmt).all()
+
+    allowed_labels = {"positive", "neutral", "negative"}
+    items: list[dict[str, object]] = []
+
+    for r in reviews:
+        raw = (r.content or "").strip()
+        if not raw or not is_feedback(raw):
+            continue
+
+        db_sentiment = (getattr(r, "sentiment_label", None) or "").lower().strip()
+        sentiment = db_sentiment if db_sentiment in allowed_labels else None
+        if sentiment is None:
+            sentiment = predict_sentiment_ml(raw).get("label") or "unknown"
+
+        aspect = classify_aspect(raw)
+        items.append(
+            {
+                "text": raw,
+                "aspect": aspect,
+                "sentiment": str(sentiment),
+                "matched_keywords": matched_feedback_keywords(raw),
+            }
         )
+
+    total = len(items)
+    limit = 200
+    limited = items[:limit]
+
+    return {
+        "total": total,
+        "items": limited,
+        **({"truncated": True, "shown": limit} if total > limit else {}),
+    }
+
+
+@router.get("/insight")
+def get_insight(db: Session = Depends(get_db)):
+    # Load all reviews, then compute (sentiment/aspect) on-demand.
+    # - Aspect: classify_aspect() at runtime (and also if DB has no aspect field)
+    # - Sentiment: prefer Review.sentiment_label; fallback to model if missing
+    stmt = select(Review)
+    reviews = db.scalars(stmt).all()
+
+    allowed_labels = {"positive", "neutral", "negative"}
+    aspect_counter: dict[str, int] = {a: 0 for a in ASPECTS}
+    negative_samples: list[dict[str, str]] = []
+
+    for r in reviews:
+        text = (r.content or "").strip()
+        if not text:
+            continue
+
+        db_sentiment = (getattr(r, "sentiment_label", None) or "").lower().strip()
+        sentiment = db_sentiment if db_sentiment in allowed_labels else None
+
+        aspect = getattr(r, "aspect", None)
+        if not aspect:
+            aspect = classify_aspect(text)
+
+        # If sentiment not present in DB, compute from model.
+        if sentiment is None:
+            pred = predict_sentiment_ml(text)
+            sentiment = pred.get("label")
+            # If we computed sentiment, we can reuse model aspect too.
+            aspect = pred.get("aspect") or aspect
+
+        if sentiment != "negative":
+            continue
+
+        aspect_counter[aspect] = aspect_counter.get(aspect, 0) + 1
+        negative_samples.append({"text": text, "aspect": str(aspect)})
+
+    total_negative = len(negative_samples)
+    aspect_distribution = {
+        aspect: int(count)
+        for aspect, count in aspect_counter.items()
+        if count > 0
+    }
+
+    top_issues = [
+        {"aspect": a, "count": int(c)}
+        for a, c in sorted(aspect_counter.items(), key=lambda x: x[1], reverse=True)
+        if c > 0
+    ]
+
+    # Keep samples deterministic and bounded.
+    samples = negative_samples[:10]
+
+    return {
+        "total_negative": total_negative,
+        "aspect_distribution": aspect_distribution,
+        "top_issues": top_issues,
+        "samples": samples,
+    }
